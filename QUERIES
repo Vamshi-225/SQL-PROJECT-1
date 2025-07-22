@@ -1,0 +1,229 @@
+-- 1.Define schema: Movies, Ratings, Users, Reviews
+
+--DROP DATABASE IF EXISTS
+DROP DATABASE IF EXISTS CINEMAS;
+
+--CREATE DATABASE CIMEMAS
+CREATE DATABASE CINEMAS;
+
+
+--DROP TABLE MOVIES
+DROP TABLE MOVIES;
+
+--CREATE TABLE MOVIES
+CREATE TABLE MOVIES(
+movie_id INT PRIMARY KEY,
+title VARCHAR(100),
+genre VARCHAR(100),
+release_year INT,
+duration INT
+);
+
+--2.Insert sample IMDb-style data
+
+INSERT INTO MOVIES(movie_id,title,genre,release_year,duration)
+VALUES(1,'The Final Horizon','Sci-Fi',2021,128),
+(2,'Love in Monsoon','Romance',2019,112),
+(3,'The Silent Warrior','Action',2020,135),
+(4,'Code of Shadows','Thriller',2022,124),
+(5,'Laughing Gas','Comedy',2018,98),
+(6,'The Forgotten Village','Mystery',2017,121),
+(7,'School Dropouts','Sci-Fi',2023,107),
+(8,'Melody of the Heart','Drama',2020,115),
+(9,'Blood and Honor','War',2021,132),
+(10,'Digital Dream','Sci-Fi',2016,110),
+(11,'The Comedian’s Dilemma','Comedy',2023,102),
+(12,'Echoes of the Past','Historical',2018,140),
+(13,'Game of Deceit','Crime',2019,125),
+(14,'Into the Light','Drama',2022,119),
+(15,'Haunted by Silence','Horror',2020,109);
+
+--RETRIVING DATA FROM MOVIES TABLE
+SELECT * FROM MOVIES;
+
+--DROP TABLE USERS1
+DROP TABLE USERS1;
+
+--CREATE TABLE USERS1
+CREATE TABLE USERS1(
+user_id INT PRIMARY KEY,
+user_name VARCHAR(100), 
+age INT, 
+location VARCHAR(100)
+);
+
+--RETRIVING DATA FROM USERS1
+SELECT * FROM USERS1;
+
+--DROP TABLE RATINGS
+DROP TABLE RATINGS;
+
+
+--CREATE TABLE RATINGS
+CREATE TABLE RATINGS(
+rating_id INT PRIMARY KEY,
+user_id INT REFERENCES USERS1(USER_ID),
+movie_id INT REFERENCES MOVIES(MOVIE_ID), 
+rating_value INT,
+rating_date DATE
+);
+
+
+--RETRIVING DATA FROM RATINGS
+SELECT * FROM RATINGS;
+
+
+--DROP TABLE REVIEWS
+DROP TABLE REVIEWS;
+
+--CREATE TABLE REVIEWS
+CREATE TABLE REVIEWS(
+review_id INT PRIMARY KEY, 
+user_id INT REFERENCES USERS1(USER_ID), 
+movie_id INT REFERENCES MOVIES(MOVIE_ID), 
+review_text VARCHAR(500),
+review_date DATE
+);
+
+--RETRIVING DATA FROM REVIEWS
+SELECT * FROM REVIEWS;
+
+-- 3.Write average rating and ranking queries.
+
+-- Find the average rating for each movie based on user ratings.
+SELECT MOVIE_ID,
+ROUND(AVG(RATING_VALUE),2) AS AVG_RATING
+FROM RATINGS
+GROUP BY MOVIE_ID
+ORDER BY AVG_RATING DESC;
+
+--Rank movies based on their average rating, optionally adding a minimum number of votes threshold (e.g., only movies with >10 ratings).
+
+SELECT 
+RANK()
+OVER(ORDER BY AVG(RATING_VALUE)DESC) AS RANK,
+MOVIE_ID,
+ROUND(AVG(RATING_VALUE),2) AS AVG_RATING,
+COUNT(*) AS TOTAL_RATINGS
+FROM RATINGS
+GROUP BY MOVIE_ID 
+HAVING COUNT(*)>10
+ORDER BY AVG_RATING DESC;
+
+--4.Create views for recommended movies.
+--Provide best-rated movies per genre (e.g., Best Action, Comedy, Drama).
+CREATE OR REPLACE VIEW TOP_RATED_MOVIES_BEFORE_2YEARS AS
+SELECT MOVIE_ID,
+ROUND(AVG(RATING_VALUE),2) AS AVG_RATING,
+COUNT(*) AS TOTAL_RATINGS
+FROM RATINGS
+WHERE RATING_DATE >= CURRENT_DATE - INTERVAL '24 MONTHS'
+GROUP BY MOVIE_ID
+HAVING COUNT(*) > 10
+ORDER BY AVG_RATING DESC;
+
+SELECT * FROM TOP_RATED_MOVIES_BEFORE_2YEARS;
+
+
+--Provide best-rated movies per genre (e.g., Best Action, Comedy, Drama).
+CREATE OR REPLACE VIEW top_rated_movies_by_genre AS
+SELECT
+    m.genre,
+    m.movie_id,
+    m.title,
+    ROUND(AVG(r.rating_value), 2) AS avg_rating,
+    COUNT(*) AS total_ratings,
+    RANK() OVER (PARTITION BY m.genre ORDER BY AVG(r.rating_value) DESC) AS genre_rank
+FROM
+    movies m
+JOIN
+    ratings r ON m.movie_id = r.movie_id
+GROUP BY
+    m.genre, m.movie_id, m.title
+HAVING
+    COUNT(*) > 10
+ORDER BY
+    m.genre, genre_rank;
+
+SELECT * FROM TOP_RATED_MOVIES_BY_GENRE;
+
+--Customize recommendations based on user demographics (e.g., Teens, Adults, Seniors).
+CREATE OR REPLACE VIEW TOP_MOVIES_BY_AGE_GROUP AS
+SELECT 
+	CASE 
+		WHEN U.AGE BETWEEN 13 AND 18 THEN '13-18'
+		WHEN U.AGE BETWEEN 19 AND 30 THEN '19-30'
+		WHEN U.AGE BETWEEN 31 AND 45 THEN '31-45'
+		WHEN U.AGE > 45 THEN '46+'
+		ELSE 'UNKNOWN'
+	END AS AGE_GROUP,
+	R.MOVIE_ID,
+	ROUND(AVG(R.RATING_VALUE),2) AS AVG_RATING,
+	COUNT(*) AS TOTAL_RATINGS,
+	RANK() OVER (PARTITION BY
+		CASE
+			WHEN U.AGE BETWEEN 13 AND 18 THEN '13-18'
+			WHEN U.AGE BETWEEN 19 AND 30 THEN '19-30'
+			WHEN U.AGE BETWEEN 31 AND 45 THEN '31-45'
+			WHEN U.AGE > 45 THEN '46+'
+	        ELSE 'UNKNOWN'
+		END ORDER BY AVG(R.RATING_VALUE)DESC) AS AGE_GROUP_RANK
+FROM 
+RATINGS R
+JOIN
+USERS1 U ON R.USER_ID=U.USER_ID
+GROUP BY 
+AGE_GROUP,R.MOVIE_ID
+HAVING
+COUNT(*)>3
+ORDER BY
+AGE_GROUP,AGE_GROUP_RANK;
+
+SELECT * FROM TOP_MOVIES_BY_AGE_GROUP;
+
+--5. Use Window Functions to Track Top-Rated Content
+--Rank Movies Per Genre by Average Rating
+SELECT
+    m.movie_id,
+    m.title,
+    m.genre,
+    ROUND(AVG(r.rating_value), 2) AS avg_rating,
+    DENSE_RANK() OVER (
+        PARTITION BY m.genre
+        ORDER BY AVG(r.rating_value) DESC
+    ) AS genre_rank
+FROM
+    movies m
+JOIN
+    ratings r ON m.movie_id = r.movie_id
+GROUP BY
+    m.genre, m.movie_id, m.title
+ORDER BY
+    m.genre,
+    genre_rank;
+
+--Movie Rating Trends Per Month with Change from Previous Month
+SELECT
+    movie_id,
+    DATE_TRUNC('month', rating_date) AS rating_month,
+    ROUND(AVG(rating_value), 2) AS avg_monthly_rating,
+    LAG(ROUND(AVG(rating_value), 2)) OVER (
+        PARTITION BY movie_id
+        ORDER BY DATE_TRUNC('month', rating_date)
+    ) AS prev_month_rating,
+    ROUND(
+        ROUND(AVG(rating_value), 2) -
+        LAG(ROUND(AVG(rating_value), 2)) OVER (
+            PARTITION BY movie_id
+            ORDER BY DATE_TRUNC('month', rating_date)
+        ),
+        2
+    ) AS rating_change
+FROM
+    ratings
+GROUP BY
+    movie_id,
+    DATE_TRUNC('month', rating_date)
+ORDER BY
+    movie_id,
+    rating_month;
