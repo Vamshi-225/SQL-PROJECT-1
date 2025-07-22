@@ -227,3 +227,17 @@ GROUP BY
 ORDER BY
     movie_id,
     rating_month;
+
+--Movie Recommendation Results
+SELECT 
+    m.movie_id, 
+    m.title, 
+    ROUND(AVG(r.rating_value),2) AS avg_rating
+FROM 
+    movies m
+JOIN 
+    ratings r ON m.movie_id = r.movie_id
+GROUP BY 
+    m.movie_id, m.title
+ORDER BY 
+    avg_rating DESC;
